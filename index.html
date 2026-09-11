@@ -34,7 +34,7 @@ function cls(s){return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g
 function norm(v){return String(v||"").trim().toLowerCase()}
 function clean(v){return String(v||"").trim().replace(/\s+/g," ")}
 function allowed(email){const e=norm(email);return e.endsWith(DOMAIN)||e===PERSONAL_EMAIL}
-function isAdmin(){return currentUser?.uid===ADMIN_UID}
+function isAdmin() {return (currentUser?.uid === ADMIN_UID ||currentProfile?.role === 'admin');}
 function userInfo(){return currentUser&&currentProfile?{uid:currentUser.uid,name:currentProfile.name,email:currentUser.email,role:currentProfile.role}:null}
 function setCloudStatus(t,s="pending"){const a=document.getElementById("syncstate"),b=document.getElementById("cloudDot");if(a)a.textContent=t;if(b)b.className="dot "+s}
 function setAuthMessage(t,ok=false){const e=document.getElementById("authMessage");if(e){e.textContent=t||"";e.classList.toggle("success",ok)}}
