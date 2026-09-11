@@ -187,14 +187,65 @@ body>*{display:none!important}
   function cls(s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll(' ', '-') }
 
   async function saveCloud(r) {
+    const syncEl = document.getElementById('syncstate');
+  
     try {
-      await setDoc(doc(db, "processes", r.uuid), r);
-    } catch (e) {
-      alert("Erro ao sincronizar na Cloud: " + e.message);
+      if (syncEl) {
+        syncEl.textContent = 'A guardar na Cloud...';
+      }
+  
+      await setDoc(
+        doc(db, 'processes', r.uuid),
+        r
+      );
+  
+      if (syncEl) {
+        if (pendingWrites) {
+          syncEl.textContent =
+            'Alterações locais por confirmar...';
+        } else if (fromCache) {
+          syncEl.textContent =
+            'Dados locais. A aguardar ligação à Cloud...';
+        } else {
+          syncEl.textContent =
+            'Confirmado pelo Firestore às ' +
+            new Date().toLocaleTimeString('pt-PT');
+        }
+      }
+  
+      console.log(
+        'Documento confirmado pelo Firestore:',
+        r.uuid
+      );
+
+      return true;
+    } catch (error) {
+      console.error(
+        'Firestore write failed:',
+        error
+      );
+
+      if (syncEl) {
+        syncEl.textContent =
+          'Erro ao guardar na Cloud';
+      }
+
+      alert(
+        'O processo não foi guardado no Firestore.\n\n' +
+        'Código: ' + (error.code || 'desconhecido') +
+        '\nMensagem: ' + (error.message || error)
+      );
+  
+      return false;
     }
   }
 
-  onSnapshot(colRef, (snapshot) => {
+  onSnapshot(
+   colRef,
+   {
+     includeMetadataChanges: true
+   },
+   snapshot => {
     processes = snapshot.docs.map(d => d.data());
     processes.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     
@@ -303,7 +354,14 @@ body>*{display:none!important}
       printOne();
     }
 
-    await saveCloud(r);
+    const saved = await saveCloud(r);
+    
+    if (!saved) {
+      alert(
+        'A alteração aparece temporariamente neste computador, ' +
+        'mas não foi confirmada pela base de dados.'
+      );
+    }
   }
 
   function nextRef(sector, dateValue) {
@@ -343,14 +401,20 @@ body>*{display:none!important}
     };
 
     selected = r;
-
+    
     closeM('newm');
     render();
-
+    
     printOne();
-
-    await saveCloud(r);
-  }
+    
+    const saved = await saveCloud(r);
+    
+    if (saved) {
+      const retainedTechnician = f.get('tech');
+      e.target.reset();
+      e.target.elements.tech.value = retainedTechnician;
+      e.target.elements.date.value = today();
+    }
 
   function render() {
     const qEl = document.getElementById('q'), fsEl = document.getElementById('fs'), feEl = document.getElementById('fe');
@@ -382,7 +446,18 @@ body>*{display:none!important}
     if (t) await eventFor(selected, { type: 'note', text: t });
   }
 
-  function openNew() { document.querySelector('#newm [name=date]').value = today(); document.getElementById('newm').classList.add('open'); }
+  function openNew() {
+  const form = document.querySelector('#newm form');
+  const techInput = form.elements.tech;
+
+  const retainedTechnician = techInput.value.trim();
+
+  form.reset();
+
+  techInput.value = retainedTechnician;
+  form.elements.date.value = today();
+
+  document.getElementById('newm').classList.add('open'); }
   function openClose() { document.querySelector('#closem [name=tech]').value = selected.tech; document.querySelector('#closem [name=date]').value = today(); document.getElementById('closem').classList.add('open'); }
   function closeM(id) { document.getElementById(id).classList.remove('open'); }
   
