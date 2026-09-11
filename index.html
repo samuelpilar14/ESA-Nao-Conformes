@@ -256,19 +256,54 @@ body>*{display:none!important}
   }
 
   async function eventFor(r, d) {
-    const at = now();
-    if (d.type === 'status') r.status = d.status;
-    if (d.type === 'note') r.notes = [...(r.notes || []), { text: d.text, at }];
-    if (d.type === 'return') { r.version = (+r.version || 1) + 1; r.status = 'Em Reparação'; }
-    if (d.type === 'close') { r.status = 'Reparado'; r.repair = d.repair; r.repairTech = d.tech; r.repairDate = d.date; }
-    if (d.type === 'delete') r.deleted = true;
-    r.updatedAt = at;
-    await saveCloud(r);
-    selected = r.deleted ? (processes.find(x => !x.deleted) || null) : r;
-    render();
-    if (d.type === 'return') setTimeout(() => printOne(), 80);
+  const at = now();
+
+  if (d.type === 'status') {
+    r.status = d.status;
   }
 
+  if (d.type === 'note') {
+    r.notes = [
+      ...(r.notes || []),
+      {
+        text: d.text,
+        at,
+        createdBy: currentUserInfo()
+      }
+    ];
+  }
+
+  if (d.type === 'return') {
+    r.version = (+r.version || 1) + 1;
+    r.status = 'Em Reparação';
+  }
+
+  if (d.type === 'close') {
+    r.status = 'Reparado';
+    r.repair = d.repair;
+    r.repairTech = d.tech;
+    r.repairDate = d.date;
+  }
+
+  if (d.type === 'delete') {
+    r.deleted = true;
+  }
+
+  r.updatedAt = at;
+  r.updatedBy = currentUserInfo();
+
+  selected = r.deleted
+    ? processes.find(x => !x.deleted) || null
+    : r;
+
+  render();
+
+  if (d.type === 'return') {
+    printOne();
+  }
+
+  await saveCloud(r);
+}
   function nextRef(sector, dateValue) {
     const pre = SECT[sector], date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue || '') ? dateValue : today(), year = date.slice(0, 4), month = date.slice(5, 7), prefix = `${pre}-AL-${year}.${month}.`;
     const nums = processes.filter(x => x.sector === sector && !x.deleted && (x.baseRef || '').startsWith(prefix)).map(x => { const m = (x.baseRef || '').match(/\.(\d{3})$/); return m ? Number(m[1]) : 0; });
@@ -276,37 +311,44 @@ body>*{display:none!important}
   }
 
   async function createProcess(e) {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    const r = {
-      uuid: uid(),
-      baseRef: nextRef(f.get('sector'), f.get('date')),
-      sector: f.get('sector'),
-      equipment: f.get('equipment'),
-      brand: f.get('brand'),
-      model: f.get('model'),
-      serial: f.get('serial'),
-      detection: f.get('detection'),
-      tech: f.get('tech'),
-      date: f.get('date'),
-      issue: f.get('issue'),
-      createdAt: now(),
-      updatedAt: now(),
-      notes: [],
-      version: 1,
-      status: 'Identificado',
-      deleted: false,
-      repair: '',
-      repairTech: '',
-      repairDate: ''
-    };
-    selected = r;
-    await saveCloud(r);
-    closeM('newm');
-    render();
-    printOne();
-  }
+  e.preventDefault();
 
+  const f = new FormData(e.target);
+
+  const r = {
+    uuid: uid(),
+    baseRef: nextRef(f.get('sector'), f.get('date')),
+    sector: f.get('sector'),
+    equipment: f.get('equipment'),
+    brand: f.get('brand'),
+    model: f.get('model'),
+    serial: f.get('serial'),
+    detection: f.get('detection'),
+    tech: f.get('tech'),
+    date: f.get('date'),
+    issue: f.get('issue'),
+    createdAt: now(),
+    updatedAt: now(),
+    notes: [],
+    version: 1,
+    status: 'Identificado',
+    deleted: false,
+    repair: '',
+    repairTech: '',
+    repairDate: '',
+    createdBy: currentUserInfo(),
+    updatedBy: currentUserInfo()
+  };
+
+  selected = r;
+
+  closeM('newm');
+  render();
+
+  printOne();
+
+  await saveCloud(r);
+}
   function render() {
     const qEl = document.getElementById('q'), fsEl = document.getElementById('fs'), feEl = document.getElementById('fe');
     const live = processes.filter(x => !x.deleted), qv = (qEl?.value || '').toLowerCase(), sv = fsEl?.value || 'Todos', ev = feEl?.value || 'Ativos';
@@ -408,14 +450,45 @@ body>*{display:none!important}
   }
 
   function preparePrint(html) {
-    const pdfEl = document.getElementById('pdf');
-    pdfEl.innerHTML = html;
-    pdfEl.className = 'pdf print-active';
-    const images = [...pdfEl.querySelectorAll('img')];
-    const finish = () => setTimeout(() => window.print(), 120);
-    if (!images.length || images.every(img => img.complete)) finish();
-    else Promise.all(images.map(img => new Promise(resolve => { img.onload = resolve; img.onerror = resolve; }))).then(finish);
+  const pdfEl = document.getElementById('pdf');
+
+  pdfEl.innerHTML = html;
+  pdfEl.className = 'pdf print-active';
+
+  const finish = () => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  };
+
+  const images = [...pdfEl.querySelectorAll('img')];
+
+  if (!images.length || images.every(img => img.complete)) {
+    finish();
+    return;
   }
+
+  let remaining = images.filter(img => !img.complete).length;
+
+  const imageFinished = () => {
+    remaining -= 1;
+
+    if (remaining <= 0) {
+      finish();
+    }
+  };
+
+  images
+    .filter(img => !img.complete)
+    .forEach(img => {
+      img.addEventListener('load', imageFinished, { once: true });
+      img.addEventListener('error', imageFinished, { once: true });
+    });
+
+  setTimeout(finish, 600);
+}
 
   function printOne() { if (selected) preparePrint(sheet(selected)); }
   function printAll(byDepartment) {
